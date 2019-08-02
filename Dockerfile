@@ -1,17 +1,18 @@
-# Start from a Debian image with the latest version of Go installed
-# and a workspace (GOPATH) configured at /go.
-FROM golang
+# FROM golang:latest
 
-# Copy the local package files to the container's workspace.
-ADD . /go/src/github.com/golang/example/outyet
+# WORKDIR /app
 
-# Build the outyet command inside the container.
-# (You may fetch or manage dependencies here,
-# either manually or with a tool like "godep".)
-RUN go install github.com/golang/example/outyet
+# COPY . .
 
-# Run the outyet command by default when the container starts.
-ENTRYPOINT /go/bin/outyet
+# RUN go get github.com/gorilla/mux
+# RUN go build -o main .
 
-# Document that the service listens on port 8080.
+FROM golang:latest
+ADD . /go/src/testGorillaMux
+WORKDIR /go/src/testGorillaMux
+RUN go get testGorillaMux
+RUN go install
+
 EXPOSE 8080
+
+CMD ["/go/bin/testGorillaMux", "config.json"]

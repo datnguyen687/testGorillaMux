@@ -1,5 +1,6 @@
 {
-    "root":"/home/dat/Downloads",
-    "host":"localhost",
-    "port":"8080"
+    "root":"/shared",
+    "host":"",
+    "port":"8080",
+    "publicIP":"172.22.0.90"
 }

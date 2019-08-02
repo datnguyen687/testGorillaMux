@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,9 +10,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -32,8 +35,9 @@ const (
 )
 
 type Server struct {
-	config config
-	router *mux.Router
+	config     config
+	router     *mux.Router
+	httpServer *http.Server
 }
 
 func (server *Server) Init(configPath string) error {
@@ -56,15 +60,39 @@ func (server *Server) Init(configPath string) error {
 	server.router = mux.NewRouter()
 	server.router.PathPrefix("/").HandlerFunc(server.handleRequest)
 
+	server.httpServer = new(http.Server)
+	server.httpServer.Addr = server.config.Host + ":" + server.config.Port
+	server.httpServer.WriteTimeout = time.Second * 10
+	server.httpServer.ReadTimeout = time.Second * 10
+	server.httpServer.IdleTimeout = time.Second * 10
+	server.httpServer.Handler = server.router
+
 	return nil
 }
 
 func (server *Server) Run() {
-	address := server.config.Host + ":" + server.config.Port
-	log.Println(http.ListenAndServe(address, server.router))
+	// address := server.config.Host + ":" + server.config.Port
+	// log.Println(http.ListenAndServe(address, server.router))
+	go func() {
+		if err := server.httpServer.ListenAndServe(); err != nil {
+			log.Println(err)
+		}
+	}()
+
+	log.Println("Listen and server:", server.httpServer.Addr)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	<-c
+
+	server.httpServer.Shutdown(context.Background())
+
+	log.Println("Shut down")
 }
 
 func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+	log.Println("Receive request from:", r.RemoteAddr, "Url:", r.URL.String())
 	newQueryURL, err := url.PathUnescape(r.URL.String())
 	fullPath := strings.TrimRight(server.config.Root, "/") + "/" + strings.TrimLeft(newQueryURL, "/")
 
@@ -79,7 +107,7 @@ func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(""))
 	}
 
-	if info.Mode().IsDir() {
+	if info.IsDir() {
 		server.handleDirRequest(w, r)
 	} else {
 		server.handleFileRequest(w, r)
@@ -116,7 +144,7 @@ func (server *Server) handleFileRequest(w http.ResponseWriter, r *http.Request) 
 }
 
 func (server *Server) handleDirRequest(w http.ResponseWriter, r *http.Request) {
-	address := server.config.Host + ":" + server.config.Port
+	address := server.config.PublicIP + ":" + server.config.Port
 
 	w.Header().Set("Content-Type", "text/html")
 

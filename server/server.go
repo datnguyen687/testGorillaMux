@@ -1,0 +1,189 @@
+package server
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+
+	"github.com/gorilla/mux"
+)
+
+const (
+	HEAD string = `<title>Simple Server</title>
+				<meta name="viewport" content="width=device-width, initial-scale=1">
+				<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+				<style>
+
+					ol {
+						list-style-type: none;
+					}
+				</style>`
+	FOLDER_HTML string = `<i class="material-icons">folder</i>`
+
+	FILE_HTML string = `<i class="material-icons">file_download</i>`
+)
+
+type Server struct {
+	config config
+	router *mux.Router
+}
+
+func (server *Server) Init(configPath string) error {
+	file, err := os.Open(configPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(data, &server.config)
+	if err != nil {
+		return err
+	}
+
+	server.router = mux.NewRouter()
+	server.router.PathPrefix("/").HandlerFunc(server.handleRequest)
+
+	return nil
+}
+
+func (server *Server) Run() {
+	address := server.config.Host + ":" + server.config.Port
+	log.Println(http.ListenAndServe(address, server.router))
+}
+
+func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+	newQueryURL, err := url.PathUnescape(r.URL.String())
+	fullPath := strings.TrimRight(server.config.Root, "/") + "/" + strings.TrimLeft(newQueryURL, "/")
+
+	if err != nil {
+		log.Println(err)
+		w.Write([]byte(""))
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		log.Println(err)
+		w.Write([]byte(""))
+	}
+
+	if info.Mode().IsDir() {
+		server.handleDirRequest(w, r)
+	} else {
+		server.handleFileRequest(w, r)
+	}
+}
+
+func (server *Server) handleFileRequest(w http.ResponseWriter, r *http.Request) {
+	newURL, _ := url.PathUnescape(r.URL.String())
+	fullPath := strings.TrimRight(server.config.Root, "/") + "/" + strings.TrimLeft(newURL, "/")
+
+	file, err := os.Open(fullPath)
+	if err != nil {
+		log.Println(err)
+		w.Write([]byte(""))
+		return
+	}
+
+	attachmentType := `"attachment; filename="%s"`
+	attachmentType = fmt.Sprintf(attachmentType, path.Base(file.Name()))
+
+	fileStat, _ := file.Stat()
+	fileSize := strconv.FormatInt(fileStat.Size(), 10)
+
+	data := make([]byte, 250)
+	file.Read(data)
+	contentType := http.DetectContentType(data)
+
+	w.Header().Set("Content-Disposition", attachmentType)
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", fileSize)
+
+	file.Seek(0, 0)
+	io.Copy(w, file)
+}
+
+func (server *Server) handleDirRequest(w http.ResponseWriter, r *http.Request) {
+	address := server.config.Host + ":" + server.config.Port
+
+	w.Header().Set("Content-Type", "text/html")
+
+	result := `<!DOCTYPE html><html><head>%s</head><body>%s</body></html>`
+	body := ""
+
+	fullPath := strings.TrimRight(server.config.Root, "/") + "/" + strings.TrimLeft(r.URL.String(), "/")
+	dirs, files, err := server.getDirsAndFilesList(fullPath)
+	if err != nil {
+		log.Println(err)
+		result = fmt.Sprintf(result, HEAD, body)
+		w.Write([]byte(result))
+		return
+	}
+
+	table := `<table>`
+
+	for _, dir := range dirs {
+
+		item := `<tr><td>%s</td><td>%s</td></tr>`
+
+		newDirname := url.PathEscape(dir.Name())
+
+		actualLink := r.URL.String() + "/" + newDirname
+		actualLink = strings.TrimLeft(actualLink, "/")
+		link := `<a href="http://%s/%s">%s</a>`
+		link = fmt.Sprintf(link, address, actualLink, dir.Name())
+		item = fmt.Sprintf(item, FOLDER_HTML, link)
+		table += item
+	}
+
+	for _, file := range files {
+		item := `<tr><td>%s</td><td>%s</td></tr>`
+		newFilename := url.PathEscape(file.Name())
+
+		actualLink := r.URL.String() + "/" + newFilename
+		actualLink = strings.TrimLeft(actualLink, "/")
+
+		link := `<a href="http://%s/%s">%s</a>`
+
+		link = fmt.Sprintf(link, address, actualLink, file.Name())
+		item = fmt.Sprintf(item, FILE_HTML, link)
+		table += item
+	}
+	table += `</table>`
+
+	body = table
+
+	result = fmt.Sprintf(result, HEAD, body)
+	w.Write([]byte(result))
+}
+
+func (server *Server) getDirsAndFilesList(fullPath string) (dirs []os.FileInfo, files []os.FileInfo, err error) {
+	infos, err := ioutil.ReadDir(fullPath)
+	if err != nil {
+		return dirs, files, err
+	}
+
+	for _, info := range infos {
+		if len(info.Name()) > 0 && info.Name() != "/" && info.Name()[0] != '.' {
+			if info.IsDir() {
+				dirs = append(dirs, info)
+			} else {
+				files = append(files, info)
+			}
+		}
+	}
+
+	return dirs, files, nil
+}

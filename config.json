@@ -1,6 +1,5 @@
 {
-    "root":"/shared",
+    "root":"/shared/",
     "host":"",
-    "port":"8080",
-    "publicIP":"172.22.0.90"
+    "port":"8080"
 }

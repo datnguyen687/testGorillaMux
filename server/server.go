@@ -71,8 +71,6 @@ func (server *Server) Init(configPath string) error {
 }
 
 func (server *Server) Run() {
-	// address := server.config.Host + ":" + server.config.Port
-	// log.Println(http.ListenAndServe(address, server.router))
 	go func() {
 		if err := server.httpServer.ListenAndServe(); err != nil {
 			log.Println(err)
@@ -105,6 +103,7 @@ func (server *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 		w.Write([]byte(""))
+		return
 	}
 
 	if info.IsDir() {
@@ -144,8 +143,6 @@ func (server *Server) handleFileRequest(w http.ResponseWriter, r *http.Request) 
 }
 
 func (server *Server) handleDirRequest(w http.ResponseWriter, r *http.Request) {
-	address := server.config.PublicIP + ":" + server.config.Port
-
 	w.Header().Set("Content-Type", "text/html")
 
 	result := `<!DOCTYPE html><html><head>%s</head><body>%s</body></html>`
@@ -170,8 +167,8 @@ func (server *Server) handleDirRequest(w http.ResponseWriter, r *http.Request) {
 
 		actualLink := r.URL.String() + "/" + newDirname
 		actualLink = strings.TrimLeft(actualLink, "/")
-		link := `<a href="http://%s/%s">%s</a>`
-		link = fmt.Sprintf(link, address, actualLink, dir.Name())
+		link := `<a href="/%s">%s</a>`
+		link = fmt.Sprintf(link, actualLink, dir.Name())
 		item = fmt.Sprintf(item, FOLDER_HTML, link)
 		table += item
 	}
@@ -183,9 +180,9 @@ func (server *Server) handleDirRequest(w http.ResponseWriter, r *http.Request) {
 		actualLink := r.URL.String() + "/" + newFilename
 		actualLink = strings.TrimLeft(actualLink, "/")
 
-		link := `<a href="http://%s/%s">%s</a>`
+		link := `<a href="/%s">%s</a>`
+		link = fmt.Sprintf(link, actualLink, file.Name())
 
-		link = fmt.Sprintf(link, address, actualLink, file.Name())
 		item = fmt.Sprintf(item, FILE_HTML, link)
 		table += item
 	}
